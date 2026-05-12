@@ -1,0 +1,36 @@
+appId: 'pl.mcdc.chujowylauncher'
+productName: 'Chujowy Launcher'
+artifactName: 'Chujowy-Launcher-setup-${version}.${ext}'
+
+copyright: 'Copyright (c) 2026 MCDC.pl'
+
+asar: true
+compression: 'maximum'
+
+files:
+  - '!{dist,.gitignore,.vscode,dev-app-update.yml}'
+
+win:
+  signAndEditExecutable: false
+  icon: 'build/icon.png'
+  target:
+    - target: 'nsis'
+      arch: 'x64'
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+
+directories:
+  buildResources: 'build'
+  output: 'dist'
+
+publish:
+  provider: 'github'
+  owner: 'Demon43222'
+  repo: 'ChujowyLauncher'
+  vPrefixedTagName: true
+  publishAutoUpdate: true
+  releaseType: 'release'

@@ -1,0 +1,78 @@
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <title>Chujowy Launcher</title>
+    <link rel="stylesheet" href="./assets/css/amongus.css">
+</head>
+<body>
+    <%- include('frame') %>
+    <section id="loadingScreen">
+        <div class="loadingCard">
+            <span>Uruchamianie launchera</span>
+            <h2 id="loadingTitle">Sprawdzam stan launchera...</h2>
+            <div class="progressTrack">
+                <div id="loadingProgressBar"></div>
+            </div>
+            <strong id="loadingProgressValue">0%</strong>
+        </div>
+    </section>
+    <main id="shell" hidden>
+        <section class="workspaceBand readyLaunchBand" id="readyLaunchBand" hidden>
+            <div class="readyLaunchWrap">
+                <button id="readyLaunchGame" class="heroLaunchButton" type="button">Graj</button>
+                <section class="installedModsPanel">
+                    <span>Zainstalowane mody</span>
+                    <div class="installedModsList">
+                        <div><strong>TOU Mira</strong><em id="readyMiraVersionLabel">Brak</em></div>
+                        <div><strong>MegaChujoweExt</strong><em id="readyExtensionVersionLabel">Brak</em></div>
+                        <div><strong>AleLuduMod</strong><em id="readyAleLuduVersionLabel">Brak</em></div>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section class="workspaceBand layoutGrid" id="setupWorkspace">
+            <section class="panel simplePanel">
+                <div class="panelHeader">
+                    <h2>Status</h2>
+                    <span id="gameStateLabel">Nie gotowe</span>
+                </div>
+                <div class="statusList simpleStatus">
+                    <div><span>Gra</span><strong id="foundGameLabel">Nie znaleziono</strong></div>
+                    <div><span>Mody</span><strong id="modsStateLabel">Do przygotowania</strong></div>
+                    <div><span>Ostatnia akcja</span><strong id="lastAction">Brak</strong></div>
+                </div>
+                <div class="actions simpleActions">
+                    <button id="autoFindGame" type="button">Znajdz gre</button>
+                    <button id="installEverything" class="primary" type="button">Przygotuj wszystko</button>
+                    <button id="launchGame" class="primary" type="button">Graj</button>
+                    <button id="selectSourceDir" type="button">Wskaz pliki recznie</button>
+                </div>
+            </section>
+
+            <aside class="panel versionsPanel">
+                <div class="panelHeader">
+                    <h2>Wersje</h2>
+                </div>
+                <div class="versionList">
+                    <div><span>Mira</span><strong id="miraVersionLabel">Brak</strong></div>
+                    <div><span>Ext</span><strong id="extensionVersionLabel">Brak</strong></div>
+                    <div><span>AleLudu</span><strong id="aleLuduVersionLabel">Brak</strong></div>
+                </div>
+                <button id="toggleConsole" class="quietButton" type="button">Pokaz konsole</button>
+            </aside>
+        </section>
+
+        <section class="workspaceBand">
+            <section class="panel logPanel" id="consolePanel" hidden>
+                <div class="panelHeader">
+                    <h2>Dziennik operacji</h2>
+                </div>
+                <pre id="logOutput"></pre>
+            </section>
+        </section>
+    </main>
+    <div id="toast" hidden></div>
+    <script src="./assets/js/amongus.js"></script>
+</body>
+</html>

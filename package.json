@@ -1,0 +1,38 @@
+{
+  "name": "mcdc-amongus-launcher",
+  "version": "1.0.0",
+  "productName": "Chujowy Launcher",
+  "description": "Launcher zarzadzajacy osobna instancja Among Us z TOU Mira i dodatkiem Extension.",
+  "author": "MCDC.pl",
+  "license": "MIT",
+  "homepage": "https://github.com/Demon43222/ChujowyLauncher",
+  "bugs": {
+    "url": "https://github.com/Demon43222/ChujowyLauncher/issues"
+  },
+  "private": false,
+  "main": "index.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder build",
+    "dist:win": "npm run dist -- -w",
+    "lint": "node --check index.js && node --check app/assets/js/amongus.js"
+  },
+  "engines": {
+    "node": "22.x.x"
+  },
+  "dependencies": {
+    "@electron/remote": "^2.1.3",
+    "adm-zip": "^0.5.16",
+    "ejs-electron": "^3.0.0",
+    "electron-updater": "^6.7.3",
+    "fs-extra": "^11.3.3"
+  },
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.4.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Demon43222/ChujowyLauncher.git"
+  }
+}
