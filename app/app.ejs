@@ -23,10 +23,12 @@
                 <section class="installedModsPanel">
                     <span>Zainstalowane mody</span>
                     <div class="installedModsList">
-                        <div><strong>TOU Mira</strong><em id="readyMiraVersionLabel">Brak</em></div>
-                        <div><strong>MegaChujoweExt</strong><em id="readyExtensionVersionLabel">Brak</em></div>
-                        <div><strong>AleLuduMod</strong><em id="readyAleLuduVersionLabel">Brak</em></div>
+                        <div><button class="modNameLink" data-mod-release="mira" type="button">TOU Mira</button><span class="modVersionGroup"><em id="readyMiraVersionLabel">Brak</em><button id="readyMiraUpdateBadge" class="modUpdateBadge" data-update-mod="mira" type="button" hidden></button></span></div>
+                        <div><button class="modNameLink" data-mod-release="extension" type="button">MegaChujoweExt</button><span class="modVersionGroup"><em id="readyExtensionVersionLabel">Brak</em><button id="readyExtensionUpdateBadge" class="modUpdateBadge" data-update-mod="extension" type="button" hidden></button></span></div>
+                        <div><button class="modNameLink" data-mod-release="aleLudu" type="button">AleLuduMod</button><span class="modVersionGroup"><em id="readyAleLuduVersionLabel">Brak</em><button id="readyAleLuduUpdateBadge" class="modUpdateBadge" data-update-mod="aleLudu" type="button" hidden></button></span></div>
+                        <div><button class="modNameLink" data-mod-release="aUnlocker" type="button">AUnlocker</button><span class="modVersionGroup"><em id="readyAUnlockerVersionLabel">Brak</em><button id="readyAUnlockerUpdateBadge" class="modUpdateBadge" data-update-mod="aUnlocker" type="button" hidden></button></span></div>
                     </div>
+                    <button id="readyOpenPlugins" class="quietButton addModButton" type="button">Dodaj mod</button>
                 </section>
             </div>
         </section>
@@ -46,6 +48,7 @@
                     <button id="autoFindGame" type="button">Znajdz gre</button>
                     <button id="installEverything" class="primary" type="button">Przygotuj wszystko</button>
                     <button id="launchGame" class="primary" type="button">Graj</button>
+                    <button id="openPlugins" type="button">Dodaj mod</button>
                     <button id="selectSourceDir" type="button">Wskaz pliki recznie</button>
                 </div>
             </section>
@@ -55,9 +58,10 @@
                     <h2>Wersje</h2>
                 </div>
                 <div class="versionList">
-                    <div><span>Mira</span><strong id="miraVersionLabel">Brak</strong></div>
-                    <div><span>Ext</span><strong id="extensionVersionLabel">Brak</strong></div>
-                    <div><span>AleLudu</span><strong id="aleLuduVersionLabel">Brak</strong></div>
+                    <div><button class="modNameLink" data-mod-release="mira" type="button">Mira</button><strong id="miraVersionLabel">Brak</strong><button id="miraUpdateBadge" class="modUpdateBadge" data-update-mod="mira" type="button" hidden></button></div>
+                    <div><button class="modNameLink" data-mod-release="extension" type="button">Ext</button><strong id="extensionVersionLabel">Brak</strong><button id="extensionUpdateBadge" class="modUpdateBadge" data-update-mod="extension" type="button" hidden></button></div>
+                    <div><button class="modNameLink" data-mod-release="aleLudu" type="button">AleLudu</button><strong id="aleLuduVersionLabel">Brak</strong><button id="aleLuduUpdateBadge" class="modUpdateBadge" data-update-mod="aleLudu" type="button" hidden></button></div>
+                    <div><button class="modNameLink" data-mod-release="aUnlocker" type="button">AUnlocker</button><strong id="aUnlockerVersionLabel">Brak</strong><button id="aUnlockerUpdateBadge" class="modUpdateBadge" data-update-mod="aUnlocker" type="button" hidden></button></div>
                 </div>
                 <button id="toggleConsole" class="quietButton" type="button">Pokaz konsole</button>
             </aside>
@@ -73,6 +77,33 @@
         </section>
     </main>
     <div id="toast" hidden></div>
+    <section id="debugMenu" hidden>
+        <div class="debugMenuCard">
+            <span>Debug</span>
+            <h2>Wybierz ekran</h2>
+            <div class="debugMenuActions">
+                <button data-debug-screen="ready" type="button">Ekran Graj</button>
+                <button data-debug-screen="setup" type="button">Ekran przygotowania</button>
+                <button data-debug-screen="console" type="button">Konsola</button>
+                <button data-debug-screen="loading" type="button">Loading screen</button>
+                <button data-debug-screen="update" type="button">Aktualizacja</button>
+                <button data-debug-screen="confirmSkip" type="button">Potwierdzenie odmowy</button>
+            </div>
+            <button id="closeDebugMenu" class="quietButton" type="button">Zamknij</button>
+        </div>
+    </section>
+    <section id="updatePrompt" hidden>
+        <div class="updatePromptCard">
+            <span>Aktualizacja launchera</span>
+            <h2 id="updatePromptTitle">Aktualizacja dostepna</h2>
+            <p id="updatePromptMessage"></p>
+            <small id="updatePromptDetail"></small>
+            <div class="updatePromptActions">
+                <button id="updatePromptDecline" class="dangerAction" type="button">Nie</button>
+                <button id="updatePromptConfirm" class="successAction" type="button">Tak</button>
+            </div>
+        </div>
+    </section>
     <script src="./assets/js/amongus.js"></script>
 </body>
 </html>

@@ -15,7 +15,8 @@ const { pathToFileURL } = require('url')
 const REPOS = {
     mira: 'AU-Avengers/TOU-Mira',
     extension: 'HekerB/TownOfUsMegaChujoweExtension',
-    aleLudu: 'townofus-pl/AleLuduMod'
+    aleLudu: 'townofus-pl/AleLuduMod',
+    aUnlocker: 'astra1dev/AUnlocker'
 }
 const LEGENDARY_REPO = 'derrod/legendary'
 const EPIC_APP_ID = '963137e4c29d4c79a81323b8fab03a40'
@@ -32,6 +33,8 @@ const COMMON_STEAM_PATHS = [
 
 let win
 let updateDownloadDialogVisible = false
+let updatePromptCounter = 0
+const updatePromptResolvers = new Map()
 
 function emitBootstrapProgress(step, progress, message) {
     win?.webContents?.send('amongus:bootstrap-progress', {
@@ -52,6 +55,45 @@ async function showUpdateDialog(options) {
     return dialog.showMessageBox(win, options)
 }
 
+function askUpdatePrompt(options) {
+    if(!win || win.isDestroyed()) {
+        return Promise.resolve(false)
+    }
+
+    const id = ++updatePromptCounter
+    return new Promise(resolve => {
+        updatePromptResolvers.set(id, resolve)
+        win.webContents.send('program-update-prompt', {
+            id,
+            ...options
+        })
+    })
+}
+
+async function shouldDownloadProgramUpdate(info) {
+    const wantsUpdate = await askUpdatePrompt({
+        title: 'Aktualizacja dostepna',
+        message: `Zaktualizowac launcher do wersji ${info.version}?`,
+        detail: 'Aktualizacja poprawia launcher i moze byc wymagana do dalszego dzialania modow.',
+        confirmLabel: 'Tak, aktualizuj',
+        declineLabel: 'Nie'
+    })
+
+    if(wantsUpdate) {
+        return true
+    }
+
+    const changedMind = await askUpdatePrompt({
+        title: 'Czy aby na pewno?',
+        message: `Pominac aktualizacje do wersji ${info.version}?`,
+        detail: 'Bez aktualizacji launcher zostanie na aktualnej wersji.',
+        confirmLabel: 'Jednak aktualizuj',
+        declineLabel: 'Tak, pomin'
+    })
+
+    return changedMind
+}
+
 function initProgramUpdater() {
     if(!app.isPackaged) {
         return
@@ -61,18 +103,7 @@ function initProgramUpdater() {
     autoUpdater.autoInstallOnAppQuit = false
 
     autoUpdater.on('update-available', async info => {
-        const result = await showUpdateDialog({
-            type: 'info',
-            title: 'Aktualizacja dostepna',
-            message: `Dostepna jest wersja ${info.version}.`,
-            detail: 'Pobrac aktualizacje teraz?',
-            buttons: ['Pobierz', 'Pozniej'],
-            defaultId: 0,
-            cancelId: 1,
-            noLink: true
-        })
-
-        if(result.response === 0) {
+        if(await shouldDownloadProgramUpdate(info)) {
             try {
                 await autoUpdater.downloadUpdate()
             } catch(err) {
@@ -209,12 +240,14 @@ async function readMetadata() {
         latestVersions: {
             mira: null,
             extension: null,
-            aleLudu: null
+            aleLudu: null,
+            aUnlocker: null
         },
         availableUpdates: {
             mira: false,
             extension: false,
-            aleLudu: false
+            aleLudu: false,
+            aUnlocker: false
         },
         lastAction: ''
     })
@@ -306,46 +339,122 @@ async function detectSteamAmongUsDir() {
     return ''
 }
 
-function request(url, responseType = 'json') {
+function requestRaw(url, headers = {}) {
     return new Promise((resolve, reject) => {
         const client = https.get(url, {
             headers: {
                 'User-Agent': 'MCDC-AmongUs-Launcher',
-                Accept: 'application/vnd.github+json'
+                ...headers
             }
         }, response => {
             if(response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
                 response.resume()
-                resolve(request(response.headers.location, responseType))
-                return
-            }
-            if(response.statusCode < 200 || response.statusCode >= 300) {
-                reject(new Error(`HTTP ${response.statusCode} dla ${url}`))
-                response.resume()
+                const nextUrl = new URL(response.headers.location, url).toString()
+                resolve(requestRaw(nextUrl, headers))
                 return
             }
 
             const chunks = []
             response.on('data', chunk => chunks.push(chunk))
             response.on('end', () => {
-                const buffer = Buffer.concat(chunks)
-                if(responseType === 'buffer') {
-                    resolve(buffer)
-                    return
-                }
-                try {
-                    resolve(JSON.parse(buffer.toString('utf8')))
-                } catch(err) {
-                    reject(err)
-                }
+                resolve({
+                    statusCode: response.statusCode,
+                    url,
+                    headers: response.headers,
+                    buffer: Buffer.concat(chunks)
+                })
             })
         })
         client.on('error', reject)
     })
 }
 
+async function request(url, responseType = 'json') {
+    const headers = responseType === 'json'
+        ? { Accept: 'application/vnd.github+json' }
+        : {}
+    const response = await requestRaw(url, headers)
+
+    if(response.statusCode < 200 || response.statusCode >= 300) {
+        const detail = response.buffer.toString('utf8').slice(0, 300)
+        const error = new Error(`HTTP ${response.statusCode} dla ${url}`)
+        error.statusCode = response.statusCode
+        error.detail = detail
+        throw error
+    }
+
+    if(responseType === 'buffer') {
+        return response.buffer
+    }
+
+    return JSON.parse(response.buffer.toString('utf8'))
+}
+
+function decodeHtml(value) {
+    return String(value || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, '\'')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+}
+
+async function latestReleaseFromHtml(repo) {
+    const response = await requestRaw(`https://github.com/${repo}/releases/latest`, {
+        Accept: 'text/html'
+    })
+
+    if(response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`HTTP ${response.statusCode} dla https://github.com/${repo}/releases/latest`)
+    }
+
+    const html = response.buffer.toString('utf8')
+    const tagFromUrl = /\/releases\/tag\/([^/?#]+)/i.exec(response.url)?.[1]
+    const tagFromPage = /\/releases\/tag\/([^"?#]+)/i.exec(html)?.[1]
+    const tag = decodeURIComponent(tagFromUrl || tagFromPage || '')
+    const assetHtml = tag
+        ? (await requestRaw(`https://github.com/${repo}/releases/expanded_assets/${encodeURIComponent(tag)}`, {
+            Accept: 'text/html'
+        })).buffer.toString('utf8')
+        : ''
+    const combinedHtml = `${html}\n${assetHtml}`
+    const escapedRepo = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const assetPattern = new RegExp(`href=["'](/${escapedRepo}/releases/download/([^/"']+)/([^"']+))["']`, 'g')
+    const assetsByUrl = new Map()
+    let match
+
+    while((match = assetPattern.exec(combinedHtml)) !== null) {
+        const downloadPath = decodeHtml(match[1])
+        const assetTag = decodeURIComponent(decodeHtml(match[2]))
+        const fileName = decodeURIComponent(decodeHtml(match[3]))
+        assetsByUrl.set(downloadPath, {
+            name: fileName,
+            browser_download_url: `https://github.com${downloadPath}`,
+            tag: assetTag
+        })
+    }
+
+    const assets = [...assetsByUrl.values()]
+    if(assets.length === 0) {
+        throw new Error(`Nie znalazlem assetow release dla ${repo}${tag ? ` (${tag})` : ''}.`)
+    }
+
+    return {
+        tag_name: assets[0].tag,
+        name: assets[0].tag,
+        assets
+    }
+}
+
 async function latestRelease(repo) {
-    return request(`https://api.github.com/repos/${repo}/releases/latest`)
+    try {
+        return await request(`https://api.github.com/repos/${repo}/releases/latest`)
+    } catch(error) {
+        if(error.statusCode === 403 || error.statusCode === 429) {
+            return latestReleaseFromHtml(repo)
+        }
+        throw error
+    }
 }
 
 function pickLegendaryAsset(release) {
@@ -385,29 +494,55 @@ function pickAleLuduAsset(release) {
         || null
 }
 
+function pickAUnlockerAsset(release, platform) {
+    const assets = release.assets || []
+    const zipAssets = assets.filter(asset => /\.zip$/i.test(asset.name))
+    const normalizedPlatform = String(platform || '').toLowerCase()
+    const platformMatches = normalizedPlatform === 'epic'
+        ? [/epic/i, /microsoft/i, /xbox/i]
+        : [/steam/i, /itch/i]
+
+    return zipAssets.find(asset => /AUnlocker/i.test(asset.name)
+            && platformMatches.some(pattern => pattern.test(asset.name)))
+        || zipAssets.find(asset => /AUnlocker/i.test(asset.name))
+        || assets.find(asset => /^AUnlocker.*\.dll$/i.test(asset.name))
+        || assets.find(asset => /\.dll$/i.test(asset.name))
+        || null
+}
+
 function releaseVersion(release, fallback = '') {
     return release?.tag_name || release?.name || fallback || ''
+}
+
+function modReleaseUrl(modId, version) {
+    if(!version || !REPOS[modId]) {
+        return ''
+    }
+    return `https://github.com/${REPOS[modId]}/releases/tag/${encodeURIComponent(version)}`
 }
 
 async function refreshLatestModStatus() {
     const metadata = await readMetadata()
     try {
-        const [miraRelease, extensionRelease, aleLuduRelease] = await Promise.all([
+        const [miraRelease, extensionRelease, aleLuduRelease, aUnlockerRelease] = await Promise.all([
             latestRelease(REPOS.mira),
             latestRelease(REPOS.extension),
-            latestRelease(REPOS.aleLudu)
+            latestRelease(REPOS.aleLudu),
+            latestRelease(REPOS.aUnlocker)
         ])
 
         const latestVersions = {
             mira: releaseVersion(miraRelease),
             extension: releaseVersion(extensionRelease),
-            aleLudu: releaseVersion(aleLuduRelease)
+            aleLudu: releaseVersion(aleLuduRelease),
+            aUnlocker: releaseVersion(aUnlockerRelease)
         }
 
         const availableUpdates = {
             mira: Boolean(metadata.mira && latestVersions.mira && metadata.mira !== latestVersions.mira),
             extension: Boolean(metadata.extension && latestVersions.extension && metadata.extension !== latestVersions.extension),
-            aleLudu: Boolean(metadata.aleLudu && latestVersions.aleLudu && metadata.aleLudu !== latestVersions.aleLudu)
+            aleLudu: Boolean(metadata.aleLudu && latestVersions.aleLudu && metadata.aleLudu !== latestVersions.aleLudu),
+            aUnlocker: Boolean(metadata.aUnlocker && latestVersions.aUnlocker && metadata.aUnlocker !== latestVersions.aUnlocker)
         }
 
         await writeMetadata({
@@ -661,6 +796,13 @@ function hasInstalledAleLudu(gameDir) {
         )
 }
 
+function hasInstalledAUnlocker(gameDir) {
+    return fs.existsSync(pluginsDir(gameDir))
+        && fs.readdirSync(pluginsDir(gameDir)).some(fileName =>
+            /^AUnlocker.*\.dll$/i.test(fileName)
+        )
+}
+
 async function installMira(release, asset, gameDir) {
     const tempZip = path.join(userDataRoot(), 'downloads', asset.name)
     const extractDir = path.join(userDataRoot(), 'downloads', 'mira-extract')
@@ -739,6 +881,33 @@ async function installAleLudu(release, asset, gameDir) {
     return release.tag_name || release.name || asset.name
 }
 
+async function installAUnlocker(release, asset, gameDir) {
+    const pluginDir = pluginsDir(gameDir)
+    await ensureDir(pluginDir)
+    await removeMatchingFiles(pluginDir, /^AUnlocker.*\.(dll|zip)$/i)
+
+    if(/\.dll$/i.test(asset.name)) {
+        const targetDll = path.join(pluginDir, asset.name)
+        await downloadAsset(asset, targetDll)
+    } else {
+        const tempZip = path.join(userDataRoot(), 'downloads', asset.name)
+        await downloadAsset(asset, tempZip)
+        const zip = new AdmZip(tempZip)
+        const dllEntry = zip.getEntries().find(entry => /AUnlocker.*\.dll$/i.test(entry.entryName))
+        if(!dllEntry) {
+            throw new Error('Paczka AUnlocker nie zawiera DLL.')
+        }
+        zip.extractEntryTo(dllEntry.entryName, pluginDir, false, true)
+        await fs.promises.rm(tempZip, { force: true })
+    }
+
+    if(!hasInstalledAUnlocker(gameDir)) {
+        throw new Error('AUnlocker zostal pobrany, ale jego DLL nie trafil do BepInEx/plugins.')
+    }
+
+    return release.tag_name || release.name || asset.name
+}
+
 async function stateSnapshot() {
     const config = await readConfig()
     const metadata = await readMetadata()
@@ -748,15 +917,18 @@ async function stateSnapshot() {
         availableUpdates.mira
         || availableUpdates.extension
         || availableUpdates.aleLudu
+        || availableUpdates.aUnlocker
     )
     const gameReady = Boolean(config.managedGameDir && fs.existsSync(gameExePath(config.managedGameDir)))
     const modsReady = Boolean(
         metadata.mira
         && metadata.extension
         && metadata.aleLudu
+        && metadata.aUnlocker
         && hasInstalledMira(config.managedGameDir)
         && hasInstalledExtension(config.managedGameDir)
         && hasInstalledAleLudu(config.managedGameDir)
+        && hasInstalledAUnlocker(config.managedGameDir)
         && !updatesAvailable
     )
     return {
@@ -764,7 +936,14 @@ async function stateSnapshot() {
         versions: {
             mira: metadata.mira,
             extension: metadata.extension,
-            aleLudu: metadata.aleLudu
+            aleLudu: metadata.aleLudu,
+            aUnlocker: metadata.aUnlocker
+        },
+        releaseUrls: {
+            mira: modReleaseUrl('mira', metadata.mira),
+            extension: modReleaseUrl('extension', metadata.extension),
+            aleLudu: modReleaseUrl('aleLudu', metadata.aleLudu),
+            aUnlocker: modReleaseUrl('aUnlocker', metadata.aUnlocker)
         },
         latestVersions: metadata.latestVersions || {},
         status: {
@@ -949,10 +1128,19 @@ async function installOrUpdateEverything() {
     const aleLuduVersion = await installAleLudu(aleLuduRelease, aleLuduAsset, config.managedGameDir)
     messages.push(`Zainstalowano AleLuduMod ${aleLuduVersion}.`)
 
+    const aUnlockerRelease = await latestRelease(REPOS.aUnlocker)
+    const aUnlockerAsset = pickAUnlockerAsset(aUnlockerRelease, config.platform)
+    if(!aUnlockerAsset) {
+        throw new Error('Nie znalazlem assetu DLL ani ZIP w latest release AUnlocker.')
+    }
+    const aUnlockerVersion = await installAUnlocker(aUnlockerRelease, aUnlockerAsset, config.managedGameDir)
+    messages.push(`Zainstalowano AUnlocker ${aUnlockerVersion}.`)
+
     await writeMetadata({
         mira: miraVersion,
         extension: extensionVersion,
         aleLudu: aleLuduVersion,
+        aUnlocker: aUnlockerVersion,
         lastAction: 'Gra i mody sa gotowe'
     })
     await refreshLatestModStatus()
@@ -961,6 +1149,99 @@ async function installOrUpdateEverything() {
         ready: true,
         messages,
         summary: 'Gotowe. Mozesz kliknac Graj.'
+    }
+}
+
+function isManagedInstancePath(targetPath) {
+    const expected = path.resolve(managedGameDir())
+    const actual = path.resolve(targetPath || '')
+    return actual === expected
+}
+
+async function reinstallEverything() {
+    const config = await readConfig()
+    if(!isManagedInstancePath(config.managedGameDir)) {
+        throw new Error('Nie moge wykonac czystej instalacji na niestandardowej sciezce.')
+    }
+
+    await fs.promises.rm(config.managedGameDir, { recursive: true, force: true })
+    await writeMetadata({
+        mira: null,
+        extension: null,
+        aleLudu: null,
+        aUnlocker: null,
+        availableUpdates: {
+            mira: false,
+            extension: false,
+            aleLudu: false,
+            aUnlocker: false
+        },
+        lastAction: 'Rozpoczeto czysta instalacje'
+    })
+
+    const result = await installOrUpdateEverything()
+    return {
+        ...result,
+        messages: ['Usunieto poprzednia instancje.', ...result.messages],
+        summary: result.ready ? 'Czysta instalacja zakonczona.' : result.summary
+    }
+}
+
+async function updateSingleMod(modId) {
+    const config = await readConfig()
+    if(!config.managedGameDir || !fs.existsSync(gameExePath(config.managedGameDir))) {
+        throw new Error('Najpierw przygotuj instancje gry.')
+    }
+
+    const metadataUpdate = {}
+    const messages = []
+
+    if(modId === 'mira') {
+        const release = await latestRelease(REPOS.mira)
+        const asset = pickMiraAsset(release, config.platform)
+        if(!asset) {
+            throw new Error('Nie znalazlem paczki ZIP w latest release TOU Mira.')
+        }
+        metadataUpdate.mira = await installMira(release, asset, config.managedGameDir)
+        messages.push(`Zaktualizowano TOU Mira do ${metadataUpdate.mira}.`)
+    } else if(modId === 'extension') {
+        const release = await latestRelease(REPOS.extension)
+        const asset = pickExtensionAsset(release)
+        if(!asset) {
+            throw new Error('Nie znalazlem assetu DLL ani ZIP w latest release addonu.')
+        }
+        metadataUpdate.extension = await installExtension(release, asset, config.managedGameDir)
+        messages.push(`Zaktualizowano MegaChujoweExt do ${metadataUpdate.extension}.`)
+    } else if(modId === 'aleLudu') {
+        const release = await latestRelease(REPOS.aleLudu)
+        const asset = pickAleLuduAsset(release)
+        if(!asset) {
+            throw new Error('Nie znalazlem assetu DLL ani ZIP w latest release AleLuduMod.')
+        }
+        metadataUpdate.aleLudu = await installAleLudu(release, asset, config.managedGameDir)
+        messages.push(`Zaktualizowano AleLuduMod do ${metadataUpdate.aleLudu}.`)
+    } else if(modId === 'aUnlocker') {
+        const release = await latestRelease(REPOS.aUnlocker)
+        const asset = pickAUnlockerAsset(release, config.platform)
+        if(!asset) {
+            throw new Error('Nie znalazlem assetu DLL ani ZIP w latest release AUnlocker.')
+        }
+        metadataUpdate.aUnlocker = await installAUnlocker(release, asset, config.managedGameDir)
+        messages.push(`Zaktualizowano AUnlocker do ${metadataUpdate.aUnlocker}.`)
+    } else {
+        throw new Error('Nieznany mod do aktualizacji.')
+    }
+
+    await writeMetadata({
+        ...metadataUpdate,
+        lastAction: messages[messages.length - 1]
+    })
+    await refreshLatestModStatus()
+
+    return {
+        ready: true,
+        messages,
+        summary: messages[messages.length - 1]
     }
 }
 
@@ -996,6 +1277,14 @@ function createWindow() {
 
 ipcMain.on('window:minimize', () => win?.minimize())
 ipcMain.on('window:close', () => win?.close())
+ipcMain.on('program-update-prompt-response', (_event, id, confirmed) => {
+    const resolve = updatePromptResolvers.get(id)
+    if(!resolve) {
+        return
+    }
+    updatePromptResolvers.delete(id)
+    resolve(Boolean(confirmed))
+})
 
 ipcMain.handle('amongus:get-state', async () => stateSnapshot())
 ipcMain.handle('amongus:bootstrap', async () => bootstrapLauncher())
@@ -1004,6 +1293,28 @@ ipcMain.handle('amongus:diagnose-repair', async () => diagnoseRepair())
 ipcMain.handle('amongus:save-config', async (_event, update) => writeConfig(update || {}))
 ipcMain.handle('amongus:auto-find-game', async () => autoFindGame())
 ipcMain.handle('amongus:install-everything', async () => installOrUpdateEverything())
+ipcMain.handle('amongus:reinstall-everything', async () => reinstallEverything())
+ipcMain.handle('amongus:update-mod', async (_event, modId) => updateSingleMod(modId))
+ipcMain.handle('amongus:open-mod-release', async (_event, modId) => {
+    const state = await stateSnapshot()
+    const hasUpdate = Boolean(state.status.availableUpdates[modId])
+    const url = state.releaseUrls[modId]
+
+    if(hasUpdate || !url) {
+        return {
+            opened: false,
+            message: hasUpdate
+                ? 'Najpierw zaktualizuj moda.'
+                : 'Brak linku do release tego moda.'
+        }
+    }
+
+    await shell.openExternal(url)
+    return {
+        opened: true,
+        message: 'Otworzono GitHub release moda.'
+    }
+})
 
 ipcMain.handle('amongus:select-source-dir', async () => {
     const result = await dialog.showOpenDialog(win, {
@@ -1033,6 +1344,21 @@ ipcMain.handle('amongus:launch-game', async () => {
     })
     return {
         message: 'Gra zostala uruchomiona.'
+    }
+})
+
+ipcMain.handle('amongus:open-plugins-folder', async () => {
+    const config = await readConfig()
+    const pluginDir = pluginsDir(config.managedGameDir)
+    await ensureDir(pluginDir)
+
+    const error = await shell.openPath(pluginDir)
+    if(error) {
+        throw new Error(error)
+    }
+
+    return {
+        message: 'Otworzono folder BepInEx/plugins.'
     }
 })
 
