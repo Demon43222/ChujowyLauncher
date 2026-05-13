@@ -1,3 +1,4 @@
+<img width="1073" height="716" alt="image" src="https://github.com/user-attachments/assets/d06389d1-cfb9-45ce-be06-bbc0f9a8ce9e" />
 # Chujowy Launcher
 
 Osobny launcher dla zarzadzanej instancji Among Us z:
