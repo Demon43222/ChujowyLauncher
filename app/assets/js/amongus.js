@@ -95,22 +95,34 @@ function applyState(state) {
     $('extensionVersionLabel').textContent = state.versions.extension || 'Brak'
     $('aleLuduVersionLabel').textContent = state.versions.aleLudu || 'Brak'
     $('aUnlockerVersionLabel').textContent = state.versions.aUnlocker || 'Brak'
+    $('perfectCommsVersionLabel').textContent = state.config.perfectCommsEnabled
+        ? (state.versions.perfectComms || 'Brak')
+        : 'Wylaczony'
     $('readyMiraVersionLabel').textContent = state.versions.mira || 'Brak'
     $('readyExtensionVersionLabel').textContent = state.versions.extension || 'Brak'
     $('readyAleLuduVersionLabel').textContent = state.versions.aleLudu || 'Brak'
     $('readyAUnlockerVersionLabel').textContent = state.versions.aUnlocker || 'Brak'
+    $('readyPerfectCommsVersionLabel').textContent = state.config.perfectCommsEnabled
+        ? (state.versions.perfectComms || 'Brak')
+        : 'Wylaczony'
     updateModBadge('miraUpdateBadge', state.status.availableUpdates.mira, state.latestVersions.mira)
     updateModBadge('extensionUpdateBadge', state.status.availableUpdates.extension, state.latestVersions.extension)
     updateModBadge('aleLuduUpdateBadge', state.status.availableUpdates.aleLudu, state.latestVersions.aleLudu)
     updateModBadge('aUnlockerUpdateBadge', state.status.availableUpdates.aUnlocker, state.latestVersions.aUnlocker)
+    updateModBadge('perfectCommsUpdateBadge', state.status.availableUpdates.perfectComms, state.latestVersions.perfectComms)
     updateModBadge('readyMiraUpdateBadge', state.status.availableUpdates.mira, state.latestVersions.mira)
     updateModBadge('readyExtensionUpdateBadge', state.status.availableUpdates.extension, state.latestVersions.extension)
     updateModBadge('readyAleLuduUpdateBadge', state.status.availableUpdates.aleLudu, state.latestVersions.aleLudu)
     updateModBadge('readyAUnlockerUpdateBadge', state.status.availableUpdates.aUnlocker, state.latestVersions.aUnlocker)
+    updateModBadge('readyPerfectCommsUpdateBadge', state.status.availableUpdates.perfectComms, state.latestVersions.perfectComms)
     updateReleaseLink('mira', state.status.availableUpdates.mira, state.releaseUrls.mira)
     updateReleaseLink('extension', state.status.availableUpdates.extension, state.releaseUrls.extension)
     updateReleaseLink('aleLudu', state.status.availableUpdates.aleLudu, state.releaseUrls.aleLudu)
     updateReleaseLink('aUnlocker', state.status.availableUpdates.aUnlocker, state.releaseUrls.aUnlocker)
+    updateReleaseLink('perfectComms', state.status.availableUpdates.perfectComms, state.releaseUrls.perfectComms)
+    document.querySelectorAll('[data-optional-mod-toggle="perfectComms"]').forEach(toggle => {
+        toggle.checked = Boolean(state.config.perfectCommsEnabled)
+    })
     $('autoFindGame').hidden = state.status.sourceDetectedAutomatically
     $('selectSourceDir').hidden = state.status.sourceDetectedAutomatically
     $('readyLaunchBand').hidden = !readyToPlay
@@ -162,7 +174,8 @@ async function updateSingleMod(modId) {
         mira: 'TOU Mira',
         extension: 'MegaChujoweExt',
         aleLudu: 'AleLuduMod',
-        aUnlocker: 'AUnlocker'
+        aUnlocker: 'AUnlocker',
+        perfectComms: 'Perfect Comms'
     }
     log(`Aktualizuje ${labels[modId] || modId}...`)
     toast(`Aktualizuje ${labels[modId] || modId}...`)
@@ -188,6 +201,28 @@ async function openPluginsFolder() {
     const result = await ipcRenderer.invoke('amongus:open-plugins-folder')
     log(result.message)
     toast(result.message)
+}
+
+async function togglePerfectComms(event) {
+    const enabled = event.currentTarget.checked
+    await ipcRenderer.invoke('amongus:save-config', {
+        perfectCommsEnabled: enabled
+    })
+
+    if(enabled) {
+        toast('Perfect Comms wlaczony.')
+        if(lastState?.status?.gameReady) {
+            await updateSingleMod('perfectComms')
+        } else {
+            log('Perfect Comms wlaczony. Zostanie zainstalowany przy przygotowaniu paczki.')
+            await refreshState()
+        }
+    } else {
+        const result = await ipcRenderer.invoke('amongus:disable-optional-mod', 'perfectComms')
+        log(result.message)
+        toast(result.message)
+        await refreshState()
+    }
 }
 
 async function selectSourceDir() {
@@ -308,6 +343,9 @@ function bind() {
     })
     document.querySelectorAll('[data-update-mod]').forEach(button => {
         button.addEventListener('click', () => updateSingleMod(button.dataset.updateMod))
+    })
+    document.querySelectorAll('[data-optional-mod-toggle]').forEach(toggle => {
+        toggle.addEventListener('change', togglePerfectComms)
     })
     document.querySelectorAll('[data-mod-release]').forEach(button => {
         button.addEventListener('click', () => openModRelease(button.dataset.modRelease))

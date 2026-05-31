@@ -16,7 +16,8 @@ const REPOS = {
     mira: 'AU-Avengers/TOU-Mira',
     extension: 'HekerB/TownOfUsMegaChujoweExtension',
     aleLudu: 'townofus-pl/AleLuduMod',
-    aUnlocker: 'astra1dev/AUnlocker'
+    aUnlocker: 'astra1dev/AUnlocker',
+    perfectComms: 'marzecoo/Chujowe-Perfect-Comms'
 }
 const LEGENDARY_REPO = 'derrod/legendary'
 const EPIC_APP_ID = '963137e4c29d4c79a81323b8fab03a40'
@@ -217,7 +218,8 @@ async function readConfig() {
         sourceGameDir: config.sourceGameDir || '',
         sourceDetection: config.sourceDetection || '',
         managedGameDir: config.managedGameDir || managedGameDir(),
-        epicInstalledGameDir: config.epicInstalledGameDir || ''
+        epicInstalledGameDir: config.epicInstalledGameDir || '',
+        perfectCommsEnabled: Boolean(config.perfectCommsEnabled)
     }
 }
 
@@ -237,17 +239,20 @@ async function readMetadata() {
         mira: null,
         extension: null,
         aleLudu: null,
+        perfectComms: null,
         latestVersions: {
             mira: null,
             extension: null,
             aleLudu: null,
-            aUnlocker: null
+            aUnlocker: null,
+            perfectComms: null
         },
         availableUpdates: {
             mira: false,
             extension: false,
             aleLudu: false,
-            aUnlocker: false
+            aUnlocker: false,
+            perfectComms: false
         },
         lastAction: ''
     })
@@ -510,6 +515,15 @@ function pickAUnlockerAsset(release, platform) {
         || null
 }
 
+function pickPerfectCommsAsset(release) {
+    const assets = release.assets || []
+    return assets.find(asset => /Perfect.?Comms.*\.dll$/i.test(asset.name))
+        || assets.find(asset => /Chujowe.*Comms.*\.dll$/i.test(asset.name))
+        || assets.find(asset => /\.dll$/i.test(asset.name))
+        || assets.find(asset => /\.zip$/i.test(asset.name))
+        || null
+}
+
 function releaseVersion(release, fallback = '') {
     return release?.tag_name || release?.name || fallback || ''
 }
@@ -523,26 +537,30 @@ function modReleaseUrl(modId, version) {
 
 async function refreshLatestModStatus() {
     const metadata = await readMetadata()
+    const config = await readConfig()
     try {
-        const [miraRelease, extensionRelease, aleLuduRelease, aUnlockerRelease] = await Promise.all([
+        const [miraRelease, extensionRelease, aleLuduRelease, aUnlockerRelease, perfectCommsRelease] = await Promise.all([
             latestRelease(REPOS.mira),
             latestRelease(REPOS.extension),
             latestRelease(REPOS.aleLudu),
-            latestRelease(REPOS.aUnlocker)
+            latestRelease(REPOS.aUnlocker),
+            latestRelease(REPOS.perfectComms)
         ])
 
         const latestVersions = {
             mira: releaseVersion(miraRelease),
             extension: releaseVersion(extensionRelease),
             aleLudu: releaseVersion(aleLuduRelease),
-            aUnlocker: releaseVersion(aUnlockerRelease)
+            aUnlocker: releaseVersion(aUnlockerRelease),
+            perfectComms: releaseVersion(perfectCommsRelease)
         }
 
         const availableUpdates = {
             mira: Boolean(metadata.mira && latestVersions.mira && metadata.mira !== latestVersions.mira),
             extension: Boolean(metadata.extension && latestVersions.extension && metadata.extension !== latestVersions.extension),
             aleLudu: Boolean(metadata.aleLudu && latestVersions.aleLudu && metadata.aleLudu !== latestVersions.aleLudu),
-            aUnlocker: Boolean(metadata.aUnlocker && latestVersions.aUnlocker && metadata.aUnlocker !== latestVersions.aUnlocker)
+            aUnlocker: Boolean(metadata.aUnlocker && latestVersions.aUnlocker && metadata.aUnlocker !== latestVersions.aUnlocker),
+            perfectComms: Boolean(config.perfectCommsEnabled && metadata.perfectComms && latestVersions.perfectComms && metadata.perfectComms !== latestVersions.perfectComms)
         }
 
         await writeMetadata({
@@ -803,6 +821,13 @@ function hasInstalledAUnlocker(gameDir) {
         )
 }
 
+function hasInstalledPerfectComms(gameDir) {
+    return fs.existsSync(pluginsDir(gameDir))
+        && fs.readdirSync(pluginsDir(gameDir)).some(fileName =>
+            /^.*Perfect[-_ ]?Comms.*\.dll$/i.test(fileName)
+        )
+}
+
 async function installMira(release, asset, gameDir) {
     const tempZip = path.join(userDataRoot(), 'downloads', asset.name)
     const extractDir = path.join(userDataRoot(), 'downloads', 'mira-extract')
@@ -908,6 +933,41 @@ async function installAUnlocker(release, asset, gameDir) {
     return release.tag_name || release.name || asset.name
 }
 
+async function installPerfectComms(release, asset, gameDir) {
+    const pluginDir = pluginsDir(gameDir)
+    await ensureDir(pluginDir)
+    await removePerfectComms(gameDir)
+
+    if(/\.dll$/i.test(asset.name)) {
+        const targetDll = path.join(pluginDir, asset.name)
+        await downloadAsset(asset, targetDll)
+    } else {
+        const tempZip = path.join(userDataRoot(), 'downloads', asset.name)
+        await downloadAsset(asset, tempZip)
+        const zip = new AdmZip(tempZip)
+        const dllEntry = zip.getEntries().find(entry =>
+            /(^|\/|\\).*Perfect[-_ ]?Comms.*\.dll$/i.test(entry.entryName)
+            || /Perfect.?Comms.*\.dll$/i.test(entry.entryName)
+        )
+        if(!dllEntry) {
+            throw new Error('Paczka Perfect Comms nie zawiera DLL.')
+        }
+        zip.extractEntryTo(dllEntry.entryName, pluginDir, false, true)
+        await fs.promises.rm(tempZip, { force: true })
+    }
+
+    if(!hasInstalledPerfectComms(gameDir)) {
+        throw new Error('Perfect Comms zostal pobrany, ale jego DLL nie trafil do BepInEx/plugins.')
+    }
+
+    return release.tag_name || release.name || asset.name
+}
+
+async function removePerfectComms(gameDir) {
+    const pluginDir = pluginsDir(gameDir)
+    await removeMatchingFiles(pluginDir, /^.*Perfect[-_ ]?Comms.*\.(dll|zip)$/i)
+}
+
 async function stateSnapshot() {
     const config = await readConfig()
     const metadata = await readMetadata()
@@ -918,6 +978,7 @@ async function stateSnapshot() {
         || availableUpdates.extension
         || availableUpdates.aleLudu
         || availableUpdates.aUnlocker
+        || availableUpdates.perfectComms
     )
     const gameReady = Boolean(config.managedGameDir && fs.existsSync(gameExePath(config.managedGameDir)))
     const modsReady = Boolean(
@@ -929,6 +990,7 @@ async function stateSnapshot() {
         && hasInstalledExtension(config.managedGameDir)
         && hasInstalledAleLudu(config.managedGameDir)
         && hasInstalledAUnlocker(config.managedGameDir)
+        && (!config.perfectCommsEnabled || (metadata.perfectComms && hasInstalledPerfectComms(config.managedGameDir)))
         && !updatesAvailable
     )
     return {
@@ -937,13 +999,15 @@ async function stateSnapshot() {
             mira: metadata.mira,
             extension: metadata.extension,
             aleLudu: metadata.aleLudu,
-            aUnlocker: metadata.aUnlocker
+            aUnlocker: metadata.aUnlocker,
+            perfectComms: metadata.perfectComms
         },
         releaseUrls: {
             mira: modReleaseUrl('mira', metadata.mira),
             extension: modReleaseUrl('extension', metadata.extension),
             aleLudu: modReleaseUrl('aleLudu', metadata.aleLudu),
-            aUnlocker: modReleaseUrl('aUnlocker', metadata.aUnlocker)
+            aUnlocker: modReleaseUrl('aUnlocker', metadata.aUnlocker),
+            perfectComms: modReleaseUrl('perfectComms', metadata.perfectComms)
         },
         latestVersions: metadata.latestVersions || {},
         status: {
@@ -1136,11 +1200,25 @@ async function installOrUpdateEverything() {
     const aUnlockerVersion = await installAUnlocker(aUnlockerRelease, aUnlockerAsset, config.managedGameDir)
     messages.push(`Zainstalowano AUnlocker ${aUnlockerVersion}.`)
 
+    let perfectCommsVersion = null
+    if(config.perfectCommsEnabled) {
+        const perfectCommsRelease = await latestRelease(REPOS.perfectComms)
+        const perfectCommsAsset = pickPerfectCommsAsset(perfectCommsRelease)
+        if(!perfectCommsAsset) {
+            throw new Error('Nie znalazlem assetu DLL ani ZIP w latest release Perfect Comms.')
+        }
+        perfectCommsVersion = await installPerfectComms(perfectCommsRelease, perfectCommsAsset, config.managedGameDir)
+        messages.push(`Zainstalowano Perfect Comms ${perfectCommsVersion}.`)
+    } else {
+        await removePerfectComms(config.managedGameDir)
+    }
+
     await writeMetadata({
         mira: miraVersion,
         extension: extensionVersion,
         aleLudu: aleLuduVersion,
         aUnlocker: aUnlockerVersion,
+        perfectComms: perfectCommsVersion,
         lastAction: 'Gra i mody sa gotowe'
     })
     await refreshLatestModStatus()
@@ -1170,11 +1248,13 @@ async function reinstallEverything() {
         extension: null,
         aleLudu: null,
         aUnlocker: null,
+        perfectComms: null,
         availableUpdates: {
             mira: false,
             extension: false,
             aleLudu: false,
-            aUnlocker: false
+            aUnlocker: false,
+            perfectComms: false
         },
         lastAction: 'Rozpoczeto czysta instalacje'
     })
@@ -1228,6 +1308,17 @@ async function updateSingleMod(modId) {
         }
         metadataUpdate.aUnlocker = await installAUnlocker(release, asset, config.managedGameDir)
         messages.push(`Zaktualizowano AUnlocker do ${metadataUpdate.aUnlocker}.`)
+    } else if(modId === 'perfectComms') {
+        const release = await latestRelease(REPOS.perfectComms)
+        const asset = pickPerfectCommsAsset(release)
+        if(!asset) {
+            throw new Error('Nie znalazlem assetu DLL ani ZIP w latest release Perfect Comms.')
+        }
+        metadataUpdate.perfectComms = await installPerfectComms(release, asset, config.managedGameDir)
+        await writeConfig({
+            perfectCommsEnabled: true
+        })
+        messages.push(`Zaktualizowano Perfect Comms do ${metadataUpdate.perfectComms}.`)
     } else {
         throw new Error('Nieznany mod do aktualizacji.')
     }
@@ -1295,6 +1386,33 @@ ipcMain.handle('amongus:auto-find-game', async () => autoFindGame())
 ipcMain.handle('amongus:install-everything', async () => installOrUpdateEverything())
 ipcMain.handle('amongus:reinstall-everything', async () => reinstallEverything())
 ipcMain.handle('amongus:update-mod', async (_event, modId) => updateSingleMod(modId))
+ipcMain.handle('amongus:disable-optional-mod', async (_event, modId) => {
+    const config = await readConfig()
+    if(modId !== 'perfectComms') {
+        throw new Error('Nieznany mod opcjonalny.')
+    }
+
+    await writeConfig({
+        perfectCommsEnabled: false
+    })
+
+    if(config.managedGameDir) {
+        await removePerfectComms(config.managedGameDir)
+    }
+
+    await writeMetadata({
+        perfectComms: null,
+        availableUpdates: {
+            ...(await readMetadata()).availableUpdates,
+            perfectComms: false
+        },
+        lastAction: 'Wylaczono Perfect Comms'
+    })
+
+    return {
+        message: 'Perfect Comms wylaczony.'
+    }
+})
 ipcMain.handle('amongus:open-mod-release', async (_event, modId) => {
     const state = await stateSnapshot()
     const hasUpdate = Boolean(state.status.availableUpdates[modId])
